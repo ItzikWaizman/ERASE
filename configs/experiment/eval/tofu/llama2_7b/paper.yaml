@@ -1,0 +1,23 @@
+# @package _global_
+# Paper-grade TOFU evaluation for Llama-2-7b-chat-hf.
+
+defaults:
+  - override /model: llama-2-7b-tofu
+  - override /eval: tofu_paper
+
+forget_split: forget10
+holdout_split: holdout10
+retain_logs_path: null
+
+model:
+  model_args:
+    pretrained_model_name_or_path: "open-unlearning/tofu_Llama-2-7b-chat-hf_full"
+
+eval:
+  tofu:
+    forget_split: ${forget_split}
+    holdout_split: ${holdout_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: false
+
+task_name: ???

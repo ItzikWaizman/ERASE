@@ -1,0 +1,23 @@
+# @package _global_
+# Paper-grade TOFU evaluation for Qwen2.5-3B-Instruct.
+
+defaults:
+  - override /model: qwen2.5-3B-tofu
+  - override /eval: tofu_paper
+
+forget_split: forget10
+holdout_split: holdout10
+retain_logs_path: null
+
+model:
+  model_args:
+    pretrained_model_name_or_path: "saves/finetune/tofu_Qwen2.5-3B-Instruct_full"
+
+eval:
+  tofu:
+    forget_split: ${forget_split}
+    holdout_split: ${holdout_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: false
+
+task_name: ???

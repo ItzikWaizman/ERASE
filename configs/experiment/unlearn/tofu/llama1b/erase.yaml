@@ -1,0 +1,65 @@
+# @package _global_
+# ERASE on TOFU — Llama-3.2-1B TOFU-full checkpoint. Requires precomputed covariances.
+
+defaults:
+  - override /model: llama-3.2-1B-tofu
+  - override /trainer: ERASE
+  - override /data: unlearn
+  - override /data/datasets@data.forget: TOFU_QA_forget
+  - override /data/datasets@data.retain: TOFU_QA_retain
+  # Paper-grade metric set (same as post-train eval_run: eval/tofu/llama1b/paper).
+  # Lets trainer.evaluate() / eval_at_epochs checkpoints write the *full*
+  # TOFU_SUMMARY (EM, MIAs, gibberish, truth_ratio_paper, …), not the slim
+  # default in configs/eval/tofu.yaml.
+  - override /eval: tofu_paper
+
+model:
+  model_args:
+    pretrained_model_name_or_path: "open-unlearning/tofu_Llama-3.2-1B-Instruct_full"
+
+forget_split: forget10
+retain_split: retain90
+holdout_split: holdout10
+retain_logs_path: "saves/eval/tofu_Llama-3.2-1B-Instruct_retain90/TOFU_EVAL.json"
+question_key: "question"
+
+eval:
+  tofu:
+    forget_split: ${forget_split}
+    holdout_split: ${holdout_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: true
+    question_key: ${question_key}
+
+data:
+  anchor: forget
+  forget:
+    TOFU_QA_forget:
+      args:
+        hf_args:
+          name: ${forget_split}
+  retain:
+    TOFU_QA_retain:
+      args:
+        hf_args:
+          name: ${retain_split}
+
+trainer:
+  args:
+    per_device_train_batch_size: 4
+    gradient_accumulation_steps: 2
+    num_train_epochs: 10
+    learning_rate: 1e-3
+    bf16: true
+    fp16: false
+    gradient_checkpointing: false
+    save_strategy: "no"
+    warmup_epochs: 0.0
+    weight_decay: 0.0
+  method_args:
+    covariance_dir: "saves/precompute/llama1b/covariances"
+    target_layers: [1, 2, 3, 4, 5]
+    alpha: 1.0
+    topk_vjp_count: 0
+
+task_name: ???

@@ -1,0 +1,50 @@
+# @package eval.tofu
+# NOTE: the above line is not a comment, but sets the package for config. See https://hydra.cc/docs/upgrades/0.11_to_1.0/adding_a_package_directive/
+#
+# Paper-grade TOFU evaluation: enables every metric needed to reproduce the
+# OpenUnlearning paper's Table 3 aggregate scores (Mem., Priv., Utility, Agg.).
+#
+# Source: OpenUnlearning paper, Appendix F.1 ("Aggregating metric scores").
+#   - Mem  = HM(1-ES, 1-EM, 1-Para.Prob, 1-Truth Ratio)
+#   - Priv = HM over MIA alignment scores (LOSS, ZLib, MinK, MinK++)
+#       NOTE: the paper does not give a closed-form formula for the per-MIA
+#       alignment score; Priv aggregation is intentionally deferred (see
+#       compute_paper_aggregates.py). The four raw MIA values ARE evaluated
+#       and reported here for inspection / future use.
+#   - Util = HM(model_utility, fluency)  where fluency = 1 - mean(gibberish)
+#   - Agg  = HM(Mem, Priv, Util)         (Priv may be omitted if not computed)
+
+defaults: # include all defined metrics files
+  - tofu_metrics: # When you import a metric here, its configuration automatically populates the
+  # metric key below, enabled by the @package directive at the top of each configuration file.
+    # Already-on metrics from configs/eval/tofu.yaml
+    - forget_Truth_Ratio
+    - forget_quality
+    - forget_Q_A_Prob
+    - forget_Q_A_ROUGE
+    - model_utility
+    - privleak
+    - extraction_strength
+    # New metrics required by the paper aggregates (see header)
+    - exact_memorization              # for EM in Mem
+    - forget_Q_A_PARA_Prob            # for Para. Prob in Mem (paraphrased)
+    - forget_Truth_Ratio_paper        # for Truth Ratio in Mem (paper aggregator: correct/(correct+wrong))
+    - forget_Q_A_gibberish            # for fluency in Util
+    - mia_loss                        # raw MIA (Priv inputs)
+    - mia_zlib                        # raw MIA (Priv inputs)
+    - mia_min_k                       # raw MIA (Priv inputs)
+    - mia_min_k_plus_plus             # raw MIA (Priv inputs)
+    # Intentionally NOT enabled here:
+    #   - mia_gradnorm   (not used by the paper's Priv aggregate)
+    #   - mia_reference  (requires extra reference model path; not needed for Priv)
+
+handler: TOFUEvaluator
+output_dir: ${paths.output_dir} # set to default eval directory
+metrics: {} # lists a mapping from each evaluation metric to its config
+# populated through the first (@package) line in each metric config
+overwrite: false
+forget_split: forget10
+holdout_split: holdout10
+retain_logs_path: null
+question_key: "question" # Specifies which key to use during forget and retain evaluations (e.g., "question" or "paraphrased_question")
+batch_size: 32

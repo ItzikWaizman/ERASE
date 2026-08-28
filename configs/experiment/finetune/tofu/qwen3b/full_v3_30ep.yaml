@@ -1,0 +1,45 @@
+# @package _global_
+# v3: same recipe as full_v2 but doubled to 30 epochs. Insurance run in case
+# 15 epochs (v2) still leaves Qwen2.5-3B-Instruct underfit on TOFU. Saved to
+# a separate output directory so v2 and v3 can be compared side-by-side.
+
+defaults:
+  - override /model: Qwen2.5-3B-Instruct
+  - override /trainer: finetune
+  - override /data/datasets@data.train: TOFU_QA_full
+  - override /eval: tofu_paper
+
+mode: finetune
+# flash_attn is not installed in the cluster conda env -- force eager.
+model:
+  model_args:
+    attn_implementation: "eager"
+trainer:
+  args:
+    learning_rate: 2e-5
+    weight_decay: 0.01
+    warmup_epochs: 0.3
+    num_train_epochs: 30
+    per_device_train_batch_size: 4
+    gradient_accumulation_steps: 8
+    lr_scheduler_type: cosine
+    bf16: true
+    bf16_full_eval: true
+    save_strategy: 'no'
+    save_only_model: true
+    do_eval: false
+    eval_on_start: false
+    eval_strategy: 'no'
+
+forget_split: forget10
+holdout_split: holdout10
+retain_logs_path: null
+
+eval:
+  tofu:
+    forget_split: ${forget_split}
+    holdout_split: ${holdout_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: true
+
+task_name: tofu_Qwen2.5-3B-Instruct_full_v3_30ep

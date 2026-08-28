@@ -1,0 +1,84 @@
+# @package _global_
+# MUSE-News 7B BASELINE unlearning (NPO / SimNPO / UNDIAL), for head-to-head
+# comparison with ERASE (configs/experiment/unlearn/muse/erase.yaml). Sibling of
+# muse/default.yaml, but: (a) full MUSE metric suite (muse_full) so baselines are
+# directly comparable to the target/retrain references and to ERASE, not just the
+# 5 default metrics; (b) the retrain reference logs are wired in for PrivLeak;
+# (c) train+eval happen in one src/train.py call (do_eval=true), matching how the
+# ERASE sweep runs. The TRAINER is overridden per method on the CLI by
+# scripts/comparison_methods/run_muse_baseline_sweep.py (trainer=NPO|SimNPO|UNDIAL),
+# along with lr / epochs / method_args.
+#
+# Llama-2-7B MUSE-News target (muse-bench/MUSE-News_target), forget/retain1 splits
+# -- identical data + model to ERASE so the only difference is the method.
+
+defaults:
+  - override /model: Llama-2-7b-hf
+  - override /trainer: GradAscent   # placeholder; overridden per run (NPO/SimNPO/UNDIAL)
+  - override /data: unlearn
+  - override /data/datasets@data.forget: MUSE_forget
+  - override /data/datasets@data.retain: MUSE_retain
+  - override /eval: muse_full
+
+data_split: News
+forget_split: forget
+retain_split: retain1
+# Retrain (oracle) reference for PrivLeak -- same path the ERASE sweep uses.
+# If absent, PrivLeak is null/failed but the other metrics still run.
+retain_logs_path: saves/eval/muse_Llama-2-7b-hf_News_retrain/MUSE_EVAL.json
+
+model:
+  model_args:
+    pretrained_model_name_or_path: muse-bench/MUSE-${data_split}_target
+    # 'auto' picks flash_attention_2 when the node supports it, else sdpa->eager.
+    attn_implementation: auto
+  # meta-llama/Llama-2-7b-hf is gated; use the byte-identical ungated mirror.
+  tokenizer_args:
+    pretrained_model_name_or_path: NousResearch/Llama-2-7b-hf
+
+data:
+  anchor: forget
+  forget:
+    MUSE_forget:
+      args:
+        hf_args:
+          path: muse-bench/MUSE-${data_split}
+          split: ${forget_split}
+  retain:
+    MUSE_retain:
+      args:
+        hf_args:
+          path: muse-bench/MUSE-${data_split}
+          split: ${retain_split}
+
+eval:
+  muse:
+    data_split: ${data_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: true
+
+trainer:
+  args:
+    # Effective batch 32 (1 x 32), matching the MUSE recipe (8 x 4). micro-batch 1
+    # keeps NPO/UNDIAL (which load a frozen 7B ref model) within GPU memory on a
+    # 2048-token chunk. lr / epochs are OVERRIDDEN per run by the runner.
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 32
+    learning_rate: 1e-5
+    num_train_epochs: 10
+    lr_scheduler_type: constant
+    gradient_checkpointing: true
+    # adamw_bnb_8bit keeps 8-bit optimizer states on-GPU (~14GB for 7B) with no
+    # host pinning -- avoids the paged_adamw_32bit ~84GB host-RAM allocation that
+    # OOMs 7B+ref_model setups under a typical Slurm mem request.
+    optim: adamw_bnb_8bit
+    bf16: true
+    do_train: true
+    do_eval: true
+    eval_on_start: false
+    eval_strategy: "no"
+    save_strategy: "no"
+    report_to: "none"
+    seed: 0
+
+task_name: ???

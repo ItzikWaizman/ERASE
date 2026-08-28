@@ -1,0 +1,13 @@
+# Llama-2-7b-chat-hf fine-tuned on full TOFU (target model before unlearning).
+model_args:
+  pretrained_model_name_or_path: "open-unlearning/tofu_Llama-2-7b-chat-hf_full"
+  torch_dtype: bfloat16
+  attn_implementation: "eager"
+tokenizer_args:
+  pretrained_model_name_or_path: "open-unlearning/tofu_Llama-2-7b-chat-hf_full"
+template_args:
+  apply_chat_template: False
+  user_start_tag: "[INST] "
+  user_end_tag: " [/INST]"
+  asst_start_tag: ""
+  asst_end_tag: " "

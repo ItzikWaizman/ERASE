@@ -1,0 +1,16 @@
+# Qwen2.5-3B-Instruct fine-tuned on full TOFU (target model before unlearning).
+# We finetune this ourselves since no HF checkpoint exists.
+model_args:
+  pretrained_model_name_or_path: "saves/finetune/tofu_Qwen2.5-3B-Instruct_full"
+  torch_dtype: bfloat16
+  attn_implementation: "eager"
+tokenizer_args:
+  pretrained_model_name_or_path: "Qwen/Qwen2.5-3B-Instruct"
+template_args:
+  apply_chat_template: True
+  system_prompt: "You are a helpful assistant."
+  system_prompt_with_special_tokens: "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+  user_start_tag: "<|im_start|>user\n"
+  user_end_tag: "<|im_end|>\n"
+  asst_start_tag: "<|im_start|>assistant\n"
+  asst_end_tag: "<|im_end|>\n"

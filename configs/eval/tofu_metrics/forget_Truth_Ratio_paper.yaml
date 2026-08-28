@@ -1,0 +1,25 @@
+# @package eval.tofu.metrics.forget_truth_ratio_paper
+#
+# Paper-flavored Truth Ratio for the FORGET split.
+#
+# Difference from forget_Truth_Ratio.yaml: aggregator = prob_mean, which uses
+# tr = correct / (correct + wrong) (the OpenUnlearning paper's "extent of
+# knowledge" definition; see comment in src/evals/metrics/memorization.py
+# next to def prob_mean).
+#
+# We add this as a SEPARATE metric so the existing forget_truth_ratio
+# (closer_to_1_better aggregator, original TOFU) keeps producing the same
+# values for backward compatibility. The paper aggregator preferentially
+# reads forget_truth_ratio_paper when present.
+defaults:
+  - .@pre_compute.forget_Q_A_PARA_Prob: forget_Q_A_PARA_Prob
+  - .@pre_compute.forget_Q_A_PERT_Prob: forget_Q_A_PERT_Prob
+
+pre_compute:
+  forget_Q_A_PARA_Prob:
+    access_key: correct
+  forget_Q_A_PERT_Prob:
+    access_key: wrong
+
+handler: truth_ratio
+aggregator: prob_mean

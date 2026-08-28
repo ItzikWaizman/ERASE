@@ -1,0 +1,143 @@
+# @package _global_
+# ERASE (internal name ERASE) on MUSE-News -- LOCAL Llama-3.2-1B variant.
+#
+# 1B sibling of configs/experiment/unlearn/muse/erase.yaml (which targets the
+# Llama-2-7B MUSE release). We could not get reliable 7B GPUs on the cluster,
+# so the whole MUSE-News ERASE experiment was ported to a locally-finetuned 1B
+# target/oracle pair (RTX 5080, 16 GB). See:
+#   - configs/experiment/finetune/muse/llama1b_news.yaml  (how the pair was made)
+#   - saves/finetune/muse_news_1b_full      TARGET (memorizes the forget text)
+#   - saves/finetune/muse_news_1b_retain    RETRAIN oracle (never saw forget)
+#
+# This is the base (Variant-3, NO VJP filtering): the spectral filter P +
+# CET loss + dynamic per-sample stopping operate on the whole supervised
+# 2048-token chunk. The NER / QA span variants reuse this file and flip the
+# VJP knobs (author_only_vjp / author_mask_mode / forget_span_cache) from the
+# runner (scripts/erase/run_muse_erase_local.py).
+#
+# Prerequisites (configs/runs/MUSE_news_1b/prep_local.sh):
+#   - Wikipedia covariance for the 1B TARGET at method_args.covariance_dir
+#   - oracle reference logs at retain_logs_path (for privleak)
+#   - tau (forget_loss_answer_target/band, dynamic-stop thresholds) calibrated
+#     from saves/precompute/muse_news_1b/ce_{target,retrain}.json and passed
+#     PER RUN on the CLI by the runner.
+
+defaults:
+  - override /model: Llama-3.2-1B
+  - override /trainer: ERASE
+  - override /data: unlearn
+  - override /data/datasets@data.forget: MUSE_forget
+  - override /data/datasets@data.retain: MUSE_retain
+  # Full MUSE metric suite so each unlearn run is directly comparable to the
+  # 1B target/oracle references, not just the generation ROUGE metrics.
+  - override /eval: muse_full
+
+data_split: News
+forget_split: forget
+retain_split: retain1
+retain_logs_path: saves/eval/muse_news_1b_retain_eval/MUSE_EVAL.json
+
+model:
+  model_args:
+    # Locally-finetuned 1B target (full News). The Llama-3.2-1B model config
+    # ships eager attention + the unsloth/Llama-3.2-1B tokenizer (ungated), so
+    # no HF auth and no flash-attn build are needed locally.
+    pretrained_model_name_or_path: saves/finetune/muse_news_1b_full
+    attn_implementation: eager
+    device_map: cuda
+
+data:
+  anchor: forget
+  forget:
+    MUSE_forget:
+      args:
+        hf_args:
+          path: muse-bench/MUSE-${data_split}
+          split: ${forget_split}
+  retain:
+    MUSE_retain:
+      args:
+        hf_args:
+          path: muse-bench/MUSE-${data_split}
+          split: ${retain_split}
+
+eval:
+  muse:
+    data_split: ${data_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: true
+    # 16 GB-safe batch sizes: Llama-3.2's 128k vocab makes the logits tensor
+    # huge (batch x seqlen x 128256), so full-sequence logprob/MIA metrics OOM
+    # at the upstream defaults. Mirror of eval/muse/llama1b_news.yaml.
+    metrics:
+      forget_knowmem_ROUGE: {batch_size: 4}
+      retain_knowmem_ROUGE: {batch_size: 4}
+      forget_verbmem_ROUGE: {batch_size: 4}
+      extraction_strength: {batch_size: 2}
+      exact_memorization: {batch_size: 2}
+      mia_loss: {batch_size: 2}
+      mia_min_k: {batch_size: 2}
+      mia_min_k_plus_plus: {batch_size: 2}
+      mia_zlib: {batch_size: 2}
+      privleak:
+        pre_compute:
+          mia_min_k: {batch_size: 2}
+
+trainer:
+  args:
+    # --- 16 GB-safe; train_scope=down_proj_only freezes all but the target
+    # down_proj matrices and optim=sgd keeps zero optimizer state, so the cost
+    # is mostly one 2048-token chunk's forward activations. The 1B is small, so
+    # micro-batch 1 x accum 8 (effective batch 8, matching the 7B recipe) fits
+    # comfortably; bump per_device_train_batch_size from the runner if desired.
+    per_device_train_batch_size: 1
+    per_device_eval_batch_size: 2
+    gradient_accumulation_steps: 8
+    learning_rate: 0.02          # OVERRIDDEN per run by the runner
+    lr_scheduler_type: constant  # OVERRIDDEN per run (7B grid showed cosine decayed lr to ~0)
+    optim: sgd
+    num_train_epochs: 20         # OVERRIDDEN per run
+    bf16: true
+    fp16: false
+    gradient_checkpointing: false
+    weight_decay: 0.0
+    save_strategy: "no"
+    do_train: true
+    do_eval: true
+    eval_on_start: false
+    eval_strategy: "no"
+    seed: 0
+    remove_unused_columns: false
+    logging_steps: 5
+    logging_strategy: "steps"
+    report_to: "none"
+  method_args:
+    covariance_dir: saves/precompute/muse_news_1b/wikipedia_covariance
+    target_layers: [0, 1, 2, 3, 4]
+    alpha: 5.0
+    forget_loss_weight: 0.9
+    forget_loss_type: "ce"
+    # --- CET: squared-error pull toward target tau (OVERRIDDEN per run) ---
+    forget_loss_answer_mode: "mse"
+    forget_loss_answer_target: 2.5
+    forget_loss_band_lower: 2.0
+    forget_loss_band_upper: 3.0
+    # --- Variant 3 default: NO VJP filtering (whole supervised chunk). The
+    # NER variant flips these from the runner (author_only_vjp=true,
+    # author_mask_mode=span, forget_span_cache=.../spans_ner.json,
+    # answer_only_down_proj_grad=false). ---
+    answer_only_down_proj_grad: true
+    author_only_vjp: false
+    author_mask_mode: "off"
+    topk_vjp_count: 0
+    vjp_renormalize: true
+    # --- dynamic per-sample stopping (thresholds OVERRIDDEN per run) ---
+    dynamic_stop_loss_threshold: 2.0
+    dynamic_stop_log_upper: 3.0
+    dynamic_stop_max_active_steps_per_sample: 10
+    dynamic_stop_longtail_threshold: 20
+    dynamic_stop_done_sample_prob: 0.2
+    dynamic_stop_decode_threshold: 3
+    train_scope: "down_proj_only"
+
+task_name: ???

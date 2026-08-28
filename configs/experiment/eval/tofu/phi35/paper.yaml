@@ -1,0 +1,24 @@
+# @package _global_
+# Paper-grade TOFU evaluation for Phi-3.5-mini-instruct.
+
+defaults:
+  - override /model: Phi-3.5-mini-instruct
+  - override /eval: tofu_paper
+
+forget_split: forget10
+holdout_split: holdout10
+retain_logs_path: null
+
+model:
+  model_args:
+    pretrained_model_name_or_path: "saves/finetune/tofu_Phi-3.5-mini-instruct_full_v2"
+    attn_implementation: "eager"
+
+eval:
+  tofu:
+    forget_split: ${forget_split}
+    holdout_split: ${holdout_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: false
+
+task_name: ???

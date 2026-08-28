@@ -1,0 +1,23 @@
+# Base (non-instruct) Llama-3.2-3B. Used as the 3B MUSE-News target/retrain.
+# We move up from 1B because knowmem (a few-shot QA task) hit a 1B capacity
+# ceiling: even the fully-memorized 1B target answered forget/retain QA at
+# ~0.19/0.21 (the 7B target reaches 0.64/0.56) because the 1B's *pretrained*
+# few-shot QA ability is too weak to survive raw-text finetuning. The 7B gets
+# knowmem "for free" from pretraining without any QA training; 3B sits between
+# the two and should retain more of that ability. This mirrors the 1B base
+# config (raw news continuation, NO chat template) -- only the size changes.
+# The Question:/Answer: tags are used only by the MUSE knowmem QA eval.
+model_args:
+  # Ungated mirror of meta-llama/Llama-3.2-3B (no HF auth needed).
+  pretrained_model_name_or_path: "unsloth/Llama-3.2-3B"
+  # eager works on any GPU/torch (incl. RTX 5080 / sm_120); proven for the 1B.
+  attn_implementation: "eager"
+  torch_dtype: bfloat16
+tokenizer_args:
+  pretrained_model_name_or_path: "unsloth/Llama-3.2-3B"
+template_args:  # See src/data/utils.py#preprocess_chat_instance.
+  apply_chat_template: False
+  user_start_tag: "Question: "
+  user_end_tag: "\n"
+  asst_start_tag: "Answer: "
+  asst_end_tag: "\n\n"

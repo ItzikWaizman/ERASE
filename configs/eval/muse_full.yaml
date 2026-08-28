@@ -1,0 +1,30 @@
+# @package eval.muse
+# Full MUSE metric suite (everything muse.yaml leaves commented out), for
+# reproducing/validating a target or retrain model against the published MUSE
+# numbers. Same package (eval.muse) as muse.yaml so all downstream
+# ${eval.muse.*} interpolations keep working.
+#
+# mia_reference is intentionally omitted: it needs a SEPARATE reference model
+# (defaults to the 7B muse-bench retrain) and a second model load. Add it back
+# with reference_model_path=<your 1B retrain dir> if you want that one metric.
+
+defaults:
+  - muse_metrics:
+    - forget_knowmem_ROUGE
+    - retain_knowmem_ROUGE
+    - forget_verbmem_ROUGE
+    - privleak
+    - extraction_strength
+    - exact_memorization
+    - mia_min_k_plus_plus
+    - mia_min_k
+    - mia_loss
+    - mia_zlib
+    - mia_gradnorm
+
+handler: MUSEEvaluator
+output_dir: ${paths.output_dir}
+metrics: {}
+overwrite: false
+data_split: News
+retain_logs_path: null

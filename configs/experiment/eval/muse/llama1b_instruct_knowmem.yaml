@@ -1,0 +1,36 @@
+# @package _global_
+# Fast knowmem-only MUSE eval for the 1B INSTRUCT model (with its chat template).
+# Used to measure the OUT-OF-THE-BOX (unfinetuned) instruct model's few-shot QA
+# knowmem, and to quickly re-check knowmem on gentler finetunes. Defaults to the
+# ungated instruct mirror; override pretrained_model_name_or_path for a checkpoint.
+#
+#   # out-of-the-box (no finetune)
+#   python src/eval.py experiment=eval/muse/llama1b_instruct_knowmem \
+#     task_name=muse_news_1b_instruct_oob_knowmem
+#
+#   # a finetuned checkpoint
+#   python src/eval.py experiment=eval/muse/llama1b_instruct_knowmem \
+#     model.model_args.pretrained_model_name_or_path=saves/finetune/muse_news_1b_instruct_full \
+#     task_name=muse_news_1b_instruct_full_knowmem
+
+defaults:
+  - override /model: Llama-3.2-1B-Instruct-local
+  - override /eval: muse_knowmem
+
+mode: eval
+data_split: News
+
+model:
+  model_args:
+    pretrained_model_name_or_path: "unsloth/Llama-3.2-1B-Instruct"
+    device_map: cuda
+
+eval:
+  muse:
+    data_split: ${data_split}
+    overwrite: true
+    metrics:
+      forget_knowmem_ROUGE: {batch_size: 4}
+      retain_knowmem_ROUGE: {batch_size: 4}
+
+task_name: ???

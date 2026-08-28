@@ -1,0 +1,54 @@
+# @package _global_
+# Evaluate a finetuned 3B MUSE-News model (target or retrain) with the full
+# metric suite. Mirror of eval/muse/llama1b_news.yaml; only the model size
+# changes. Point the model at the saved checkpoint and (for PrivLeak) set
+# retain_logs_path to the retrain model's MUSE_EVAL.json. Run via eval.yaml:
+#
+#   # retrain (reference): no retain logs yet -> PrivLeak is self/uninformative
+#   python src/eval.py experiment=eval/muse/llama3b_news \
+#     model.model_args.pretrained_model_name_or_path=saves/finetune/muse_news_3b_retain \
+#     task_name=muse_news_3b_retain_eval
+#
+#   # target: reference the retrain eval logs -> PrivLeak ~ -100 if memorized
+#   python src/eval.py experiment=eval/muse/llama3b_news \
+#     model.model_args.pretrained_model_name_or_path=saves/finetune/muse_news_3b_full \
+#     retain_logs_path=saves/eval/muse_news_3b_retain_eval/MUSE_EVAL.json \
+#     task_name=muse_news_3b_full_eval
+
+defaults:
+  - override /model: Llama-3.2-3B
+  - override /eval: muse_full
+
+mode: eval
+data_split: News
+retain_logs_path: null
+
+model:
+  model_args:
+    pretrained_model_name_or_path: ???  # set on CLI to the finetuned save dir
+    device_map: cuda
+
+eval:
+  muse:
+    data_split: ${data_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: true
+    # 16 GB-safe batch sizes, dropped vs the 1B because the 3B weights leave less
+    # headroom: Llama-3.2's 128k vocab makes the logits tensor huge
+    # (batch x seqlen x 128256), so the full-sequence logprob/MIA metrics OOM at
+    # larger batches. Generation (ROUGE) metrics are lighter.
+    metrics:
+      forget_knowmem_ROUGE: {batch_size: 2}
+      retain_knowmem_ROUGE: {batch_size: 2}
+      forget_verbmem_ROUGE: {batch_size: 2}
+      extraction_strength: {batch_size: 1}
+      exact_memorization: {batch_size: 1}
+      mia_loss: {batch_size: 1}
+      mia_min_k: {batch_size: 1}
+      mia_min_k_plus_plus: {batch_size: 1}
+      mia_zlib: {batch_size: 1}
+      privleak:
+        pre_compute:
+          mia_min_k: {batch_size: 1}
+
+task_name: ???

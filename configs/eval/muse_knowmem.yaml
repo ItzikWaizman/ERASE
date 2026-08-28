@@ -1,0 +1,18 @@
+# @package eval.muse
+# NOTE: the @package line is a Hydra directive (not a comment); it places this
+# under eval.muse so ${eval.muse.*} interpolations work (same as muse.yaml).
+#
+# Knowmem-only MUSE eval (forget + retain QA ROUGE). A fast subset of muse_full
+# for probing few-shot QA ability quickly (no MIA/verbmem/extraction), e.g. to
+# measure an UNFINETUNED model's out-of-the-box knowmem.
+defaults:
+  - muse_metrics:
+    - forget_knowmem_ROUGE
+    - retain_knowmem_ROUGE
+
+handler: MUSEEvaluator
+output_dir: ${paths.output_dir}
+metrics: {}
+overwrite: false
+data_split: News
+retain_logs_path: null

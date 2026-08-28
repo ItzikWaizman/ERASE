@@ -1,0 +1,126 @@
+# @package _global_
+# ERASE (internal name ERASE) on MUSE -- Llama-2-7B MUSE target.
+#
+# This is the Variant-3 base: NO VJP filtering (the spectral filter + CET loss
+# + dynamic per-sample stopping operate on the whole supervised 2048-token
+# chunk). Variants 1 (NER mask) and 2 (QA-keyword mask) reuse this file and
+# flip the VJP knobs once the MUSE entity-span source lands.
+#
+# Prerequisites (see configs/runs/MUSE_news_7b_prep/run.sh):
+#   - Wikipedia covariance for the MUSE target at method_args.covariance_dir
+#   - retain reference logs at retain_logs_path (for privleak)
+#
+# tau-dependent knobs (forget_loss_answer_target, band, dynamic-stop thresholds)
+# are overridden PER RUN via the CLI in MUSE_news_7b_erase_novjp/run.sh.
+
+defaults:
+  - override /model: Llama-2-7b-hf
+  - override /trainer: ERASE
+  - override /data: unlearn
+  - override /data/datasets@data.forget: MUSE_forget
+  - override /data/datasets@data.retain: MUSE_retain
+  # Full MUSE metric suite (knowmem/verbmem ROUGE, privleak, extraction_strength,
+  # exact_memorization, and all MIA metrics) so each unlearn run is directly
+  # comparable to the target/retrain references, not just the 5 in muse.yaml.
+  - override /eval: muse_full
+
+data_split: News
+forget_split: forget
+retain_split: retain1
+retain_logs_path: saves/eval/muse_Llama-2-7b-hf_News_retrain/MUSE_EVAL.json
+
+model:
+  model_args:
+    pretrained_model_name_or_path: muse-bench/MUSE-${data_split}_target
+    # The base Llama-2-7b-hf config hard-codes flash_attention_2, which fails on
+    # nodes without flash_attn or on pre-Ampere GPUs (e.g. V100). 'auto' lets
+    # get_model() pick flash_attention_2 when the node supports it and otherwise
+    # fall back (sdpa -> eager), so the sweep runs on any GPU we land on.
+    attn_implementation: auto
+  # meta-llama/Llama-2-7b-hf is gated; use the byte-identical ungated mirror so
+  # the cluster needs no HF auth. (Same tokenizer.model as the MUSE target.)
+  tokenizer_args:
+    pretrained_model_name_or_path: NousResearch/Llama-2-7b-hf
+
+data:
+  anchor: forget
+  forget:
+    MUSE_forget:
+      args:
+        hf_args:
+          path: muse-bench/MUSE-${data_split}
+          split: ${forget_split}
+  retain:
+    MUSE_retain:
+      args:
+        hf_args:
+          path: muse-bench/MUSE-${data_split}
+          split: ${retain_split}
+
+eval:
+  muse:
+    data_split: ${data_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: true
+
+trainer:
+  args:
+    # --- memory-safe for unknown SLURM GPU (sized for a 48GB A6000 worst case) ---
+    # train_scope=down_proj_only freezes all but 5 down_proj matrices and optim=sgd
+    # keeps zero optimizer state, so the cost is mostly the full-forward activation
+    # memory of one 2048-token chunk. micro-batch 1 x accum 8 keeps effective batch 8.
+    per_device_train_batch_size: 1
+    per_device_eval_batch_size: 8
+    gradient_accumulation_steps: 8
+    learning_rate: 0.02
+    lr_scheduler_type: cosine
+    optim: sgd
+    num_train_epochs: 20
+    bf16: true
+    fp16: false
+    gradient_checkpointing: false
+    weight_decay: 0.0
+    save_strategy: "no"
+    do_train: true
+    do_eval: true
+    eval_on_start: false
+    eval_strategy: "no"
+    seed: 0
+    remove_unused_columns: false
+    # --- monitoring: dense train logs for the loss-vs-epoch curve + diagnostics ---
+    # log_history (-> trainer_state.json, which analyze_muse_run.py reads) is
+    # populated regardless of report_to, so we keep external loggers OFF. NOTE:
+    # report_to must be a string here ("none"/"tensorboard"), NOT a YAML list:
+    # an OmegaConf ListConfig is not a python list, so HF's __post_init__
+    # double-wraps it ([['tensorboard']]) and crashes. "none" -> [] avoids that
+    # and needs no tensorboard package on the node.
+    logging_steps: 5
+    logging_strategy: "steps"
+    report_to: "none"
+  method_args:
+    covariance_dir: saves/precompute/muse_news_7b/wikipedia_covariance
+    target_layers: [0, 1, 2, 3, 4]
+    alpha: 5.0
+    forget_loss_weight: 0.9
+    forget_loss_type: "ce"
+    # --- CET: squared-error pull toward target tau (OVERRIDDEN per run) ---
+    forget_loss_answer_mode: "mse"
+    forget_loss_answer_target: 2.5
+    forget_loss_band_lower: 2.0
+    forget_loss_band_upper: 3.0
+    # --- Variant 3: NO VJP filtering (whole supervised chunk) ---
+    answer_only_down_proj_grad: true
+    author_only_vjp: false
+    author_mask_mode: "off"
+    topk_vjp_count: 0
+    vjp_renormalize: true
+    # --- dynamic per-sample stopping (thresholds OVERRIDDEN per run) ---
+    dynamic_stop_loss_threshold: 2.0
+    dynamic_stop_log_upper: 3.0
+    dynamic_stop_max_active_steps_per_sample: 10
+    dynamic_stop_longtail_threshold: 20
+    dynamic_stop_done_sample_prob: 0.2
+    dynamic_stop_decode_threshold: 3
+    train_scope: "down_proj_only"
+
+task_name: ???

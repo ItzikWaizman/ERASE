@@ -1,0 +1,20 @@
+# Base (non-instruct) Llama-3.2-1B. Used as the 1B MUSE-News target/retrain:
+# MUSE finetunes a BASE LM on raw news continuation (no chat template), so this
+# mirrors configs/model/Llama-2-7b-hf.yaml (the 7B MUSE base) rather than the
+# Instruct config. The Question:/Answer: tags are only used by the MUSE knowmem
+# QA eval to format prompts.
+model_args:
+  # Ungated mirror of meta-llama/Llama-3.2-1B (no HF auth needed).
+  pretrained_model_name_or_path: "unsloth/Llama-3.2-1B"
+  # eager works on any GPU/torch (incl. brand-new RTX 5080 / sm_120). Switch to
+  # "sdpa" for speed once you confirm the local torch build supports it.
+  attn_implementation: "eager"
+  torch_dtype: bfloat16
+tokenizer_args:
+  pretrained_model_name_or_path: "unsloth/Llama-3.2-1B"
+template_args:  # See src/data/utils.py#preprocess_chat_instance.
+  apply_chat_template: False
+  user_start_tag: "Question: "
+  user_end_tag: "\n"
+  asst_start_tag: "Answer: "
+  asst_end_tag: "\n\n"

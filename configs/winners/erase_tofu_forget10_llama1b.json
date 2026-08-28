@@ -1,0 +1,42 @@
+[
+  {
+    "task_prefix": "R2_ERASE_s0",
+    "seed": 0,
+    "model_tag": "llama1b",
+    "cov_source": "wikipedia",
+    "lr": 0.025,
+    "alpha": 4.0,
+    "topk": 10,
+    "layers": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "author_only_vjp": true,
+    "author_mask_mode": "span",
+    "vjp_renormalize": true,
+    "forget_loss_type": "ce",
+    "forget_loss_weight": 0.9,
+    "forget_loss_max_ce": 0,
+    "forget_loss_per_token_cap": 0,
+    "forget_loss_answer_target": 2,
+    "forget_loss_answer_mode": "mse",
+    "forget_loss_band_lower": 1.5,
+    "forget_loss_band_upper": 2.5,
+    "lr_scheduler": "cosine",
+    "epochs": 100,
+    "per_device_train_batch_size": 4,
+    "gradient_accumulation_steps": 2,
+    "deterministic": true,
+    "dynamic_stop_loss_threshold": 2.0,
+    "dynamic_stop_log_upper": 4.0,
+    "dynamic_stop_max_active_steps_per_sample": 5,
+    "dynamic_stop_longtail_threshold": 15,
+    "dynamic_stop_decode_threshold": 3,
+    "dynamic_stop_done_sample_prob": 0.0,
+    "train_scope": "down_proj_only"
+  }
+]

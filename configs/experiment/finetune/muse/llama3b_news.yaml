@@ -1,0 +1,66 @@
+# @package _global_
+# MUSE-News finetune at 3B (Llama-3.2-3B base). Unlike the 1B -- which was badly
+# under-memorized by the gentle MUSE recipe and needed a hard push (lr 5e-5,
+# 25 epochs) that *destroyed* its few-shot QA ability (knowmem ~0.2) -- the 3B
+# has more capacity, so we deliberately START WITH THE OFFICIAL MUSE RECIPE
+# (lr 1e-5, 10 epochs) to MEMORIZE the news while PRESERVING the pretrained QA
+# ability that knowmem depends on. If memorization is too weak (forget verbmem /
+# extraction / exact_mem not clearly above the oracle), bump epochs and/or lr a
+# little -- but only as much as needed, to avoid the 1B's QA collapse.
+#
+# MUSE has no official 3B target, so we build our own (recipe matched for both):
+#   data_sub_set=full   -> saves/finetune/muse_news_3b_full    (TARGET, memorized)
+#   data_sub_set=retain -> saves/finetune/muse_news_3b_retain  (RETRAIN oracle)
+#
+# Tuned for a single 16 GB GPU (RTX 5080): a full 3B finetune is ~6 GB weights
+# + ~6 GB grads on-GPU, so we drop to micro-batch 1 x accum 32 (effective batch
+# 32, matching the recipe's 8x4), gradient checkpointing on, and a paged 32-bit
+# Adam optimizer that keeps the ~26 GB optimizer state off the GPU (in CPU RAM;
+# the box has 61 GB + a 26 GB pagefile). MUSE eval is a separate step
+# (configs/experiment/eval/muse/llama3b_news.yaml) so PrivLeak can reference the
+# retrain logs, so do_eval is off here.
+
+defaults:
+  - override /model: Llama-3.2-3B
+  - override /trainer: finetune
+  - override /data/datasets@data.train: MUSE_train
+  - override /eval: muse
+  - override /data: finetune
+
+mode: finetune
+data_split: News
+data_sub_set: full   # full -> target, retain -> retrain
+
+data:
+  train:
+    MUSE_train:
+      args:
+        hf_args:
+          path: tamarsonha/MUSE-${data_split}-Train
+          split: ${data_sub_set}
+
+trainer:
+  args:
+    # --- official MUSE recipe (gentle, preserves QA): lr 1e-5, 10 epochs ---
+    learning_rate: 1e-5
+    weight_decay: 0.01
+    num_train_epochs: 10
+    # --- 16 GB-safe for a full 3B finetune; effective batch = 1 * 32 = 32 ---
+    per_device_train_batch_size: 1
+    gradient_accumulation_steps: 32
+    gradient_checkpointing: true
+    optim: paged_adamw_32bit  # pages 32-bit Adam state to CPU (needs bitsandbytes)
+    bf16: true
+    bf16_full_eval: true
+    # Save the checkpoint, skip inline eval (done as a separate step for PrivLeak).
+    do_train: true
+    do_eval: false
+    eval_on_start: false
+    eval_strategy: "no"
+    save_strategy: "no"
+    save_only_model: true
+    report_to: "none"
+    logging_steps: 5
+    seed: 0
+
+task_name: muse_news_3b_${data_sub_set}

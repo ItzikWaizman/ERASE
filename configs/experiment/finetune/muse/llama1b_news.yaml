@@ -1,0 +1,62 @@
+# @package _global_
+# MUSE-News finetune at 1B (Llama-3.2-1B base). The MUSE default recipe
+# (lr 1e-5, 10 epochs) was tuned for 7B/13B and left the 1B badly
+# under-memorized (forget verbmem/knowmem/extraction flat vs the oracle, and
+# the oracle's retain_knowmem too low). The 1B needs a harder push, so we use
+# lr 5e-5 and 25 epochs (weight_decay 0.01, 1-epoch warmup) for BOTH the target
+# (full) and the retrain oracle (retain), keeping the recipe matched.
+#
+# MUSE has no official 1B target, so we build our own:
+#   data_sub_set=full   -> saves/finetune/muse_news_1b_full    (TARGET, memorized)
+#   data_sub_set=retain -> saves/finetune/muse_news_1b_retain  (RETRAIN oracle)
+#
+# Tuned for a single 16 GB GPU (RTX 5080): effective batch stays 32 (recipe 8x4)
+# via micro-batch 2 x accum 16, gradient checkpointing on, and a paged optimizer
+# that keeps the 32-bit Adam state off the GPU. MUSE eval is run separately
+# (configs/experiment/eval/muse/llama1b_news.yaml) so PrivLeak can reference the
+# retrain logs, so do_eval is off here.
+
+defaults:
+  - override /model: Llama-3.2-1B
+  - override /trainer: finetune
+  - override /data/datasets@data.train: MUSE_train
+  - override /eval: muse
+  - override /data: finetune
+
+mode: finetune
+data_split: News
+data_sub_set: full   # full -> target, retain -> retrain
+
+data:
+  train:
+    MUSE_train:
+      args:
+        hf_args:
+          path: tamarsonha/MUSE-${data_split}-Train
+          split: ${data_sub_set}
+
+trainer:
+  args:
+    learning_rate: 5e-5
+    weight_decay: 0.01
+    warmup_epochs: 1.0   # custom param -> warmup_steps (see src/trainer/__init__.py)
+    num_train_epochs: 25
+    # --- 16 GB-safe; effective batch = 2 * 16 = 32 (MUSE recipe is 8 * 4) ---
+    per_device_train_batch_size: 2
+    gradient_accumulation_steps: 16
+    gradient_checkpointing: true
+    optim: paged_adamw_32bit  # pages 32-bit Adam state to CPU (needs bitsandbytes)
+    bf16: true
+    bf16_full_eval: true
+    # Save the checkpoint, skip inline eval (done as a separate step for PrivLeak).
+    do_train: true
+    do_eval: false
+    eval_on_start: false
+    eval_strategy: "no"
+    save_strategy: "no"
+    save_only_model: true
+    report_to: "none"
+    logging_steps: 5
+    seed: 0
+
+task_name: muse_news_1b_${data_sub_set}

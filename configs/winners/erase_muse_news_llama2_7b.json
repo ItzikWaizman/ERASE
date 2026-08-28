@@ -1,0 +1,40 @@
+{
+  "task_prefix": "ERASE_muse_news_7b_winner",
+  "base": {
+    "method": "ner",
+    "epochs": 40,
+    "lr": 0.05,
+    "alpha": 3,
+    "tau": 2.0,
+    "layers": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "monitor_interval": 25,
+    "probe_size": 8,
+    "eval_every_steps": 50,
+    "eval_every_steps_warmup": 400,
+    "token_ce_dump_epochs": 2,
+    "stop_forget_ce_auto": true,
+    "stop_retain_rise": 1.5,
+    "stop_warmup": 400,
+    "stop_patience": 3,
+    "stop_ckpt_only": true,
+    "hard_stop_retain_rise": 3.0,
+    "longtail_threshold": 40,
+    "max_active_steps": 6
+  },
+  "runs": [
+    {
+      "lr": 0.04,
+      "tau": 1.5,
+      "alpha": 2.5
+    }
+  ]
+}

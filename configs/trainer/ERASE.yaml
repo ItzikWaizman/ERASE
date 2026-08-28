@@ -1,0 +1,147 @@
+defaults:
+  - finetune
+
+handler: ERASE
+
+args:
+  optim: sgd
+  learning_rate: 1e-3
+  weight_decay: 0.0
+  num_train_epochs: 10
+  # Run full TOFU eval (same pipeline as post-train eval) at end of these
+  # epochs only. 1-based: 10 = after the 10th epoch. Saves under
+  # `{output_dir}/checkpoint-{global_step}/evals/`. Empty = off.
+  eval_at_epochs: []
+  gradient_checkpointing: false
+  bf16: true
+  fp16: false
+
+method_args:
+  covariance_dir: "saves/precompute/llama1b/covariances"
+  target_layers: [1, 2, 3, 4, 5]
+  alpha: 1.0
+  forget_loss_weight: 1.0
+  forget_loss_max_ce: 0.0
+  # Per-position CE clamp on the forget loss (BEFORE averaging).
+  # 0 = off (preserves all existing behaviour). Independent of forget_loss_max_ce.
+  forget_loss_per_token_cap: 0.0
+  # Per-question BOUNDED forget objective (Variant-A sigmoid target). When > 0,
+  # replaces the unbounded CE-ascent forget term with a saturating sigmoid push
+  # toward this length-normalized NLL target (nats/token). Naturally converges:
+  # mean answer CE rises toward the target and stops, instead of running away.
+  # 0 = off (preserves the existing CE-ascent / cap-only forget paths).
+  forget_loss_answer_target: 0.0
+  # Per-sample MSE target jitter (std). 0 = off (single shared target). When
+  # > 0 (mse mode), each forget sample gets a stable per-key target drawn from
+  # N(forget_loss_answer_target, this_std) so the unlearned forget-CE matches
+  # the oracle's spread instead of collapsing to a single-tau spike.
+  forget_loss_answer_target_std: 0.0
+  # #1 per-token CE ceiling: tokens already above this are excluded from the
+  # forget push (protects the hardest tokens -> MinK++). 0 = off.
+  forget_loss_token_ce_ceiling: 0.0
+  forget_loss_answer_mode: "sigmoid"   # "sigmoid" | "mse"
+  forget_loss_band_lower: 2.0
+  forget_loss_band_upper: 4.0
+  forget_loss_type: "ce"           # "ce"
+  # Auxiliary entropy regularizer (composes with the CE-up forget path).
+  # When weight > 0 AND target > 0, adds + weight * (target - H_forget)^2
+  # using the mean per-token softmax entropy at FORGET answer positions.
+  # Pulls the full distribution toward retain-like spread, mitigating the
+  # "confidently wrong" attractor that hurts MIN-K++ alignment. 0 = off.
+  forget_entropy_reg_weight: 0.0
+  forget_entropy_reg_target: 0.0
+  topk_vjp_count: 0
+  author_only_vjp: false
+  # Restrict the down_proj VJP reconstruction to answer (labelled) positions
+  # only. Used by the MUSE recipe (whole supervised chunk = answer). Ignored
+  # when author_only_vjp or topk_vjp_count > 0. false = project the full
+  # autograd down_proj gradient.
+  answer_only_down_proj_grad: false
+  # "token_set" = legacy flat token-ID membership (backward compat, ~27% match),
+  # "span"      = contiguous span matching (precise, includes name parts),
+  # "off"       = disable author mask entirely.
+  author_mask_mode: "token_set"
+  # Path to a precomputed forget-span cache (JSON: {"spans": {key: [tok_seq]}}).
+  # Empty = TOFU author extractor (default). When set with author_mask_mode=
+  # "span", builds the VJP mask from this cache (e.g. MUSE NER / QA-keyword
+  # spans from scripts/erase/build_muse_spans.py); the zero-match guard is
+  # disabled in this mode.
+  forget_span_cache: ""
+  # Rescale VJP-filtered gradient by (n_answer / n_selected) so magnitude is
+  # independent of how many author/topk tokens were selected. false = off.
+  vjp_renormalize: false
+  # Per-sample dynamic stopping. When > 0, replaces forget_loss_max_ce
+  # and forget_loss_per_token_cap with a per-sample gate: the moment a
+  # sample's LENGTH-NORMALIZED mean CE on its answer tokens reaches this
+  # threshold, the sample is added to a persistent "done" set and is
+  # excluded from the forget loss for the rest of training. When ALL
+  # forget samples are in the done set, training stops cleanly.
+  dynamic_stop_loss_threshold: 0.0
+  # Informational-only upper threshold; counts how many samples in each
+  # batch exceed this and logs to TB as dynstop_n_overshoot. Useful for
+  # checking whether the stop threshold actually keeps samples in band.
+  # 0.0 = no overshoot logging.
+  dynamic_stop_log_upper: 0.0
+  # Patience (per-sample). Force-marks a sample done after this many
+  # active gradient steps even if its mean-CE stays below the threshold.
+  # An "active" step = the sample is in the batch AND not yet done.
+  # 0 = disabled (infinite patience, run idles forever on stragglers).
+  # The forget set has 400 samples and the dataloader cycles every epoch,
+  # so a sample receives ~1 active step per epoch; e.g. 30 = give up
+  # after ~30 epochs of unsuccessful ascent on a single sample.
+  dynamic_stop_max_active_steps_per_sample: 0
+  # When the remaining-active count drops to this value or below, the
+  # trainer decodes and logs each stuck sample's prompt + GT exactly
+  # once. Helps identify which sample is resistant. 0 = no decoding.
+  dynamic_stop_decode_threshold: 3
+  # Long-tail "remaining < N" gate that activates patience. When the
+  # number of still-active forget samples is BELOW this threshold AND
+  # any active sample has appeared in MORE optimiser steps than
+  # `dynamic_stop_max_active_steps_per_sample`, the run stops. Default
+  # 10 matches the user spec.
+  dynamic_stop_longtail_threshold: 10
+  # Probability [0,1] of re-sampling a "done" sample instead of swapping
+  # it for an active one. Allows band/MSE to keep correcting drift on
+  # done samples. 0.0 = legacy (remove permanently). Training still stops
+  # when all samples have entered the band at least once.
+  dynamic_stop_done_sample_prob: 0.0
+  # Trainable parameter scope. The spectral filter P is ALWAYS applied
+  # only to down_proj.weight.grad at target_layers.
+  #   "down_proj_only"      (default; legacy): only down_proj@target_layers
+  train_scope: "down_proj_only"
+  # --- Legacy retain-CE early-stop (absolute threshold) ---
+  retain_ce_stop_threshold: 0.0
+  retain_ce_monitor_interval: 25
+  # --- Signal monitor + automatic stop (the deliverable early-stop) ---
+  # Every N steps, evaluate a FIXED forget + retain probe (teacher-forced CE,
+  # no grad/generation), log all candidate trigger signals to
+  # `{output_dir}/signal_monitor.jsonl` (telemetry), and apply the auto-stop
+  # rule below. 0 = off.
+  signal_monitor_interval: 0
+  signal_monitor_probe_size: 4
+  signal_monitor_log: ""
+  # Auto-stop when the FORGET probe mean CE reaches this "natural" level for
+  # `stop_patience` consecutive monitor hits (forget text now un-memorised).
+  # 0 = off. Estimate from the BASE pretrained model's CE on the forget text
+  # (no oracle needed).
+  stop_forget_ce_target: 0.0
+  # COLLAPSE GUARD: auto-stop the instant the RETAIN probe mean CE rises this
+  # many nats above its step-0 baseline (retain starting to degrade). 0 = off.
+  stop_retain_ce_rise: 0.0
+  stop_monitor_warmup_steps: 0
+  stop_patience: 2
+  # Checkpoint-only stop mode: a firing stop rule does NOT terminate training;
+  # instead the weights are saved once per rule kind to
+  # checkpoint-{step}-earlystop-{kind} (with EARLYSTOP_SIGNAL.json) and an
+  # immediate eval runs at that step; training continues to the budget.
+  stop_signal_checkpoint_only: false
+  # Deep-collapse bail-out: REAL stop (even in checkpoint-only mode) once the
+  # retain probe CE rises this many nats above baseline. Set well past the
+  # collapse-guard level (e.g. 3.0 vs 1.5). 0 = off.
+  hard_stop_retain_ce_rise: 0.0
+  # Every N epochs (0 = off), no-grad forward over the ENTIRE forget set and
+  # save each sample's per-token CE (fp16) to
+  # `{output_dir}/token_ce_dumps/ep..._step....npz` -- offline stop-signal
+  # mining (collapse-precursor analysis). ~1-2 min per dump on MUSE 7B.
+  token_ce_dump_epochs: 0.0
+  token_ce_dump_max_samples: 0

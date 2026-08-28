@@ -1,0 +1,54 @@
+# @package _global_
+# Finetune Phi-3.5-mini-instruct (3.8B) on the full TOFU dataset (the
+# "init_finetuned" target model for Phi-3.5 unlearning experiments).
+#
+# Phi-3.5-mini-instruct is the non-Llama / non-Qwen base model used by the
+# OpenUnlearning paper (Dorna et al. 2025, arXiv:2506.12618) for TOFU.
+# Hyperparameters mirror the Qwen2.5-3B v2 recipe (which itself is the
+# OpenUnlearning standard for chat-aligned models in the 3B class):
+#   * effective batch size 32  (per_device_train_batch_size=4, grad_accum=8)
+#   * learning_rate 2e-5       (OU maintainer recipe for Phi)
+#   * num_train_epochs 15      (enough reps to memorize 4000 QA pairs)
+#   * warmup_epochs 0.3        (~3% warmup)
+#   * cosine LR schedule
+#   * eager attention (cluster env has no flash_attn)
+
+defaults:
+  - override /model: Phi-3.5-mini-instruct
+  - override /trainer: finetune
+  - override /data/datasets@data.train: TOFU_QA_full
+  - override /eval: tofu_paper
+
+mode: finetune
+model:
+  model_args:
+    attn_implementation: "eager"
+trainer:
+  args:
+    learning_rate: 2e-5
+    weight_decay: 0.01
+    warmup_epochs: 0.3
+    num_train_epochs: 15
+    per_device_train_batch_size: 4
+    gradient_accumulation_steps: 8
+    lr_scheduler_type: cosine
+    bf16: true
+    bf16_full_eval: true
+    save_strategy: 'no'
+    save_only_model: true
+    do_eval: false
+    eval_on_start: false
+    eval_strategy: 'no'
+
+forget_split: forget10
+holdout_split: holdout10
+retain_logs_path: null
+
+eval:
+  tofu:
+    forget_split: ${forget_split}
+    holdout_split: ${holdout_split}
+    retain_logs_path: ${retain_logs_path}
+    overwrite: true
+
+task_name: tofu_Phi-3.5-mini-instruct_full_v2
